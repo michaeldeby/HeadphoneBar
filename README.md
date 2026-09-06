@@ -1,8 +1,39 @@
 # HeadphoneBar
 
+Open-source headphone controls, licensed under [MIT](LICENSE).
+
+| Edition | Status |
+| --- | --- |
+| **macOS** | Available as a preview · macOS 14+ · Apple Silicon and Intel |
+| **Omarchy / Linux** | [Coming soon](docs/omarchy.md) · no Linux build yet |
+
 A native macOS menu bar app for connected Sennheiser, Sony, and Bose headphones. Requires macOS 14 or later. Local Bluetooth and audio-output control; no account or server.
 
 When a BTD 700 USB audio output is present, **Use BTD 700** switches the macOS default audio output to it. **Use Bluetooth** switches back to the selected headphones when their direct Bluetooth audio output is available. Headphones must already be paired with the dongle. ANC/EQ still use the direct Mac Bluetooth connection; this does not forward headphone commands through USB. Apps with their own output selection may need to follow the system default. Dongle changes are detected on refresh and every five seconds.
+
+## Install macOS
+
+Download the `.pkg` installer from [Releases](https://github.com/michaeldeby/HeadphoneBar/releases).
+It installs `HeadphoneBar.app` in `/Applications`. Alternatively, download the ZIP
+and move the app to Applications. Release assets include SHA-256 checksums.
+
+Preview builds are ad-hoc signed and **not notarized by Apple**. If macOS blocks
+launch, use **System Settings → Privacy & Security → Open Anyway** after verifying
+the download and deciding you trust this release. No security settings need to be
+disabled. Apple Developer signing/notarization is not configured yet.
+
+### Homebrew
+
+Each release generates a checksum-pinned cask as a release asset. Once the
+maintainer merges that cask into this repository:
+
+```sh
+brew tap michaeldeby/headphonebar https://github.com/michaeldeby/HeadphoneBar.git
+brew install --cask michaeldeby/headphonebar/headphonebar
+```
+
+This is a project-maintained tap, not an entry in Homebrew's official cask catalog.
+The release PR must be merged before `brew upgrade` can see a new version.
 
 ## Build and run
 
@@ -76,3 +107,17 @@ The **BTD 700 Advanced…** panel reads and sets Standard, Gaming and Broadcast 
 Standard → Gaming → Standard was verified on the connected hardware. Broadcast has not been exercised in the hardware test. Protocol references: [btd700ctl](https://github.com/sobalap/btd700ctl), [Sennheiser Dongle Control research](https://github.com/sinchichou/Sennheiser-Dongle-Control).
 
 The Advanced panel also offers the USB audio formats reported by Core Audio, matching Audio MIDI Setup. A 16-bit/44.1 kHz change and restoration to 24-bit/96 kHz were verified. Bluetooth transmission quality also depends on the codec and headphones.
+
+## Release automation
+
+GitHub Actions runs protocol tests and builds a universal app, ZIP and `.pkg` on
+pull requests and pushes to `main`. To publish a preview, update `VERSION` through
+a reviewed PR, merge it, then tag that commit (`v0.1.0`, for example) and push the
+tag. The release workflow verifies the tag matches `VERSION` and belongs to
+`main`, publishes versioned assets, and generates `headphonebar.rb` with the ZIP checksum.
+To update the Homebrew tap, download that asset into `Casks/headphonebar.rb` and
+submit it in a draft PR for review. No workflow PR-approval permissions are required.
+
+Build packages locally with `./scripts/package-macos.sh`. Signing certificates,
+notarization credentials and firmware images are not stored in the repository.
+Third-party license notices remain in `ThirdPartyNotices` and the app bundle.
