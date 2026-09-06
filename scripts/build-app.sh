@@ -9,13 +9,21 @@ if [[ ! "$BUILD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "VERSION must contain a numeric major.minor.patch version" >&2
   exit 1
 fi
-ARCH_ARGS=()
-if [[ "${UNIVERSAL:-0}" == "1" ]]; then ARCH_ARGS=(--arch arm64 --arch x86_64); fi
-swift build -c release --disable-sandbox --cache-path "$PWD/.build/cache" "${ARCH_ARGS[@]}"
-BINARY_DIR="$(swift build -c release --show-bin-path --disable-sandbox --cache-path "$PWD/.build/cache" "${ARCH_ARGS[@]}")"
 APP="$PWD/dist/HeadphoneBar.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BINARY_DIR/HeadphoneBar" "$APP/Contents/MacOS/HeadphoneBar"
+if [[ "${UNIVERSAL:-0}" == "1" ]]; then
+  for arch in arm64 x86_64; do
+    triple="${arch}-apple-macosx14.0"
+    swift build -c release --product HeadphoneBar --triple "$triple" --disable-sandbox --cache-path "$PWD/.build/cache"
+    binary_dir="$(swift build -c release --show-bin-path --triple "$triple" --disable-sandbox --cache-path "$PWD/.build/cache")"
+    cp "$binary_dir/HeadphoneBar" "$PWD/.build/HeadphoneBar-$arch"
+  done
+  lipo -create "$PWD/.build/HeadphoneBar-arm64" "$PWD/.build/HeadphoneBar-x86_64" -output "$APP/Contents/MacOS/HeadphoneBar"
+else
+  swift build -c release --disable-sandbox --cache-path "$PWD/.build/cache"
+  BINARY_DIR="$(swift build -c release --show-bin-path --disable-sandbox --cache-path "$PWD/.build/cache")"
+  cp "$BINARY_DIR/HeadphoneBar" "$APP/Contents/MacOS/HeadphoneBar"
+fi
 cp -R ThirdPartyNotices "$APP/Contents/Resources/"
 cp LICENSE "$APP/Contents/Resources/LICENSE"
 cat > "$APP/Contents/Info.plist" <<'PLIST'

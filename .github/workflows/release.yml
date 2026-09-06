@@ -27,6 +27,8 @@ jobs:
           swift run -c release HeadphoneProtocolTests
           ./scripts/package-macos.sh
           lipo -verify_arch arm64 x86_64 dist/HeadphoneBar.app/Contents/MacOS/HeadphoneBar
+      - name: Generate Homebrew cask
+        run: python3 scripts/generate-cask.py dist/release/headphonebar.rb
       - name: Publish preview release
         env:
           GH_TOKEN: ${{ github.token }}
