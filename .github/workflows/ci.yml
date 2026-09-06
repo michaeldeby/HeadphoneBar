@@ -19,7 +19,7 @@ jobs:
           python3 scripts/generate-cask.py dist/release/headphonebar.rb
           ruby -c dist/release/headphonebar.rb
       - name: Verify universal executable
-        run: lipo -verify_arch arm64 x86_64 dist/HeadphoneBar.app/Contents/MacOS/HeadphoneBar
+        run: lipo dist/HeadphoneBar.app/Contents/MacOS/HeadphoneBar -verify_arch arm64 x86_64
       - uses: actions/upload-artifact@v4
         with:
           name: HeadphoneBar-macOS-preview

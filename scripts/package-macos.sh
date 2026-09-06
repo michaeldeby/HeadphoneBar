@@ -7,10 +7,10 @@ RELEASE_VERSION="$(cat VERSION)"
 RELEASE_DIR="$PWD/dist/release"
 mkdir -p "$RELEASE_DIR"
 BASE="HeadphoneBar-${RELEASE_VERSION}-macOS-universal"
-/usr/bin/ditto -c -k --sequesterRsrc --keepParent dist/HeadphoneBar.app "$RELEASE_DIR/$BASE.zip"
+/usr/bin/ditto -c -k --norsrc --noextattr --noacl --keepParent dist/HeadphoneBar.app "$RELEASE_DIR/$BASE.zip"
 PACKAGE_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/headphonebar-package.XXXXXX")"
 trap 'rm -rf "$PACKAGE_ROOT"' EXIT
-/usr/bin/ditto dist/HeadphoneBar.app "$PACKAGE_ROOT/HeadphoneBar.app"
+/usr/bin/ditto --norsrc --noextattr --noacl dist/HeadphoneBar.app "$PACKAGE_ROOT/HeadphoneBar.app"
 /usr/bin/pkgbuild --root "$PACKAGE_ROOT" --component-plist packaging/components.plist \
   --ownership recommended --install-location /Applications \
   --identifier com.michaeldeby.headphonebar.installer --version "$RELEASE_VERSION" \
