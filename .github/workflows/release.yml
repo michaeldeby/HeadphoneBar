@@ -1,0 +1,37 @@
+name: Release macOS
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          test "$RELEASE_TAG" = "v$(cat VERSION)"
+          git merge-base --is-ancestor HEAD origin/main
+      - name: Test and package
+        run: |
+          swift run -c release HeadphoneProtocolTests
+          ./scripts/package-macos.sh
+          lipo -verify_arch arm64 x86_64 dist/HeadphoneBar.app/Contents/MacOS/HeadphoneBar
+      - name: Publish preview release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/release/* \
+            --verify-tag --prerelease --title "HeadphoneBar $RELEASE_TAG — macOS preview" \
+            --notes-file packaging/release-notes.md

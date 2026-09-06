@@ -1,0 +1,23 @@
+name: macOS CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Protocol tests
+        run: swift run -c release HeadphoneProtocolTests
+      - name: Universal app and installer
+        run: ./scripts/package-macos.sh
+      - name: Verify universal executable
+        run: lipo -verify_arch arm64 x86_64 dist/HeadphoneBar.app/Contents/MacOS/HeadphoneBar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HeadphoneBar-macOS-preview
+          path: dist/release/*
+          if-no-files-found: error
