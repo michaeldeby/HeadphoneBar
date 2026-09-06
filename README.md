@@ -24,8 +24,7 @@ disabled. Apple Developer signing/notarization is not configured yet.
 
 ### Homebrew
 
-Each release generates a checksum-pinned cask as a release asset. Once the
-maintainer merges that cask into this repository:
+Install the macOS preview using the project’s Homebrew tap:
 
 ```sh
 brew tap michaeldeby/headphonebar https://github.com/michaeldeby/HeadphoneBar.git
