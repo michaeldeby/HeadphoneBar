@@ -21,7 +21,7 @@ output.write_text(f'''cask "headphonebar" do
   desc "Menu bar headphone controls and Sennheiser BTD 700 settings"
   homepage "https://github.com/michaeldeby/HeadphoneBar"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "HeadphoneBar.app"
 
