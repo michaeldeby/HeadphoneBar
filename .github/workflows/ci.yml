@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Protocol tests
         run: swift run -c release HeadphoneProtocolTests
+      - name: Session and cache regression tests
+        run: ./scripts/test-sessions.sh
       - name: Universal app and installer
         run: ./scripts/package-macos.sh
       - name: Validate generated Homebrew cask

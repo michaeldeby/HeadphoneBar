@@ -10,6 +10,23 @@ import CoreAudio
     @Published var selectedID: String?
     @Published var controls: Controls?
     @Published var busy = false
+    @Published var refreshing = false
+    @Published var controlsVerified = false
+    private var generation = 0
+    private var operationTask: Task<Void, Never>?
+    private var deadlineTask: Task<Void, Never>?
+    private var retryCount = 0
+    private var retryAt: Date?
+    private var cache: [String: (Controls, Date)] = [:]
+    private let responseTimeout: Duration
+    private let makeController: (Headphone) -> HeadphoneController?
+    var working: Bool { busy || refreshing }
+    var canEditControls: Bool { selected?.connected == true && controlsVerified && !working }
+    var controlStatus: String {
+        if selected?.connected != true { return "Mac Bluetooth disconnected · cached settings" }
+        if refreshing { return controls == nil ? "Connecting controls…" : "Updating settings…" }
+        return controlsVerified ? "Controls available" : "Controls unavailable · cached settings"
+    }
     @Published var message: String?
     @Published var bluetoothStatus: String?
     @Published var updatedAt: Date?
@@ -32,19 +49,33 @@ import CoreAudio
         return matches.count == 1 ? matches[0] : nil
     }
     var currentOutputName: String { audioOutputs.first { $0.id == audioOutputID }?.name ?? "Unavailable" }
+    private var outputErrorWaitingForHeadphoneID: String?
     private var advancedPanel: NSPanel?
     private var controller: HeadphoneController?
     private var bleDiagnostic: MomentumBLEDiagnostic?
     private var timer: Timer?
     private var bluetooth: CBCentralManager!
     var selected: Headphone? { headphones.first { $0.id == selectedID } }
-    override init() {
+    init(startMonitoring: Bool = true, responseTimeout: Duration = .seconds(30), controllerFactory: ((Headphone) -> HeadphoneController?)? = nil) {
+        self.responseTimeout = responseTimeout
+        makeController = controllerFactory ?? { headphone in
+            switch headphone.kind {
+            case .momentum4: return MomentumController(address: headphone.id)
+            case .sony: return SonyController(address: headphone.id)
+            case .bose: return BoseController(name: headphone.name)
+            default: return nil
+            }
+        }
         super.init()
+        guard startMonitoring else { return }
         if ProcessInfo.processInfo.arguments.contains("--diagnose-momentum") { bleDiagnostic = MomentumBLEDiagnostic() }
         bluetooth = CBCentralManager(delegate: self, queue: .main)
-        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.scan() }
         }
+        RunLoop.main.add(timer!, forMode: .common)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(willSleep), name: NSWorkspace.willSleepNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake), name: NSWorkspace.didWakeNotification, object: nil)
     }
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
@@ -52,113 +83,177 @@ import CoreAudio
         case .poweredOff: bluetoothStatus = "Bluetooth is off. Turn it on in System Settings."; clearConnection()
         case .unauthorized: bluetoothStatus = "Allow HeadphoneBar in System Settings → Privacy & Security → Bluetooth."; clearConnection()
         case .unsupported: bluetoothStatus = "Bluetooth is unavailable on this Mac."; clearConnection()
-        default: bluetoothStatus = "Waiting for Bluetooth…"
+        default: bluetoothStatus = "Waiting for Bluetooth…"; clearConnection()
         }
     }
+    @objc func willSleep() { clearConnection() }
+    @objc private func didWake() { clearConnection(); scan() }
     private func clearConnection() {
-        controls = nil
-        if !busy { controller?.close(); controller = nil }
+        generation += 1
+        operationTask?.cancel(); operationTask = nil
+        deadlineTask?.cancel(); deadlineTask = nil
+        controller?.close(); controller = nil
+        busy = false; refreshing = false; readingDongleMode = false
+        controlsVerified = false
+        retryCount = 0; retryAt = nil
     }
     func scan() {
+        let oldDongles = Set(dongleOutputs.map(\.id))
         audioOutputs = AudioOutputs.list()
         audioOutputID = AudioOutputs.currentID()
-        guard !busy, bluetooth.state == .poweredOn else { return }
+        if oldDongles != Set(dongleOutputs.map(\.id)) {
+            clearConnection()
+            dongleMode = nil; dongleFormats = []; dongleFormatID = ""
+            dongleModeError = nil; dongleFormatError = nil; audioOutputError = nil
+        }
+        guard bluetooth?.state == .poweredOn else { return }
         let paired = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] ?? []
-        headphones = paired.compactMap { device in
+        updateHeadphones(paired.compactMap { device in
             guard let id = device.addressString, let name = device.name else { return nil }
             let kind = HeadphoneKind.detect(name)
             guard kind != .unknown || device.deviceClassMajor == 4 else { return nil }
             return Headphone(id: id, name: name, kind: kind, connected: device.isConnected())
-        }.sorted { lhs, rhs in lhs.connected != rhs.connected ? lhs.connected : lhs.name < rhs.name }
-        if let selected, !selected.connected { clearConnection() }
-        if selectedID != nil && selected == nil { clearConnection(); selectedID = nil }
+        })
+    }
+    func updateHeadphones(_ devices: [Headphone], now: Date = Date()) {
+        let wasConnected = selected?.connected == true
+        headphones = devices.sorted { $0.connected != $1.connected ? $0.connected : $0.name < $1.name }
+        let pairedIDs = Set(devices.map(\.id))
+        cache = cache.filter { pairedIDs.contains($0.key) }
+        if selectedID != nil && selected == nil {
+            clearConnection(); selectedID = nil; controls = nil; updatedAt = nil; message = nil
+            audioOutputError = nil; outputErrorWaitingForHeadphoneID = nil
+        }
+        if let waitingID = outputErrorWaitingForHeadphoneID,
+           waitingID != selectedID || selected?.connected == true {
+            audioOutputError = nil; outputErrorWaitingForHeadphoneID = nil
+        }
+        if wasConnected != (selected?.connected == true) { clearConnection(); message = nil }
         if selectedID == nil {
             let connected = headphones.filter { $0.connected && $0.kind != .unknown }
             if connected.count == 1 { select(connected[0].id) }
+        } else if selected?.connected == true && !controlsVerified && !working && retryCount < 3,
+                  retryAt == nil || now >= retryAt! {
+            refresh(force: false, now: now)
         }
     }
     func select(_ id: String) {
         guard !busy else { return }
-        controller?.close(); controller = nil; controls = nil; message = nil; updatedAt = nil
+        clearConnection()
         selectedID = id
-        refresh()
+        controls = cache[id]?.0; updatedAt = cache[id]?.1
+        message = nil; audioOutputError = nil; outputErrorWaitingForHeadphoneID = nil
+        refresh(force: false)
     }
-    func refresh() {
-        guard !busy else { return }
-        guard let selected, selected.connected else { message = "Connect the headphones in macOS Bluetooth settings, then refresh."; return }
-        if controller == nil {
-            switch selected.kind {
-            case .momentum4: controller = MomentumController(address: selected.id)
-            case .sony: controller = SonyController(address: selected.id)
-            case .bose: controller = BoseController(name: selected.name)
-            case .sennheiserAudio: message = "BTD 700 audio is supported. ANC/EQ controls for this model are not implemented yet."; return
-            case .unknown: message = "Detected as an audio device. This model does not have a control adapter yet."; return
-            }
+    func panelOpened() { scan(); refresh(force: false) }
+    func refresh(force: Bool = true, now: Date = Date()) {
+        guard !working, bluetoothStatus == nil, selected?.connected == true else { return }
+        if !force {
+            if controlsVerified, let updatedAt, now.timeIntervalSince(updatedAt) < 30 { return }
+            if retryCount >= 3 || retryAt.map({ now < $0 }) == true { return }
+        } else { retryCount = 0; retryAt = nil }
+        guard let selected else { return }
+        if controller == nil { controller = makeController(selected) }
+        guard controller != nil else { return }
+        perform(writing: false) { _ in }
+    }
+    private func perform(writing: Bool = true, _ operation: @escaping (HeadphoneController) async throws -> Void) {
+        guard !working, bluetoothStatus == nil, selected?.connected == true, let controller,
+              let id = selectedID, !writing || controlsVerified else { return }
+        let token = generation
+        busy = writing; refreshing = !writing; message = nil
+        deadlineTask = Task { [weak self] in
+            do { try await Task.sleep(for: self?.responseTimeout ?? .seconds(30)) } catch { return }
+            guard let self, self.generation == token else { return }
+            self.operationTask?.cancel()
+            self.generation += 1
+            self.readFailed("Headphone controls timed out. Refresh to retry.")
         }
-        perform { _ in }
-    }
-    private func perform(_ operation: @escaping (HeadphoneController) async throws -> Void) {
-        guard !busy, let controller else { return }
-        busy = true; message = nil
-        Task {
-            defer { busy = false }
+        operationTask = Task {
             do {
+                try Task.checkCancellation()
                 try await operation(controller)
-                controls = try await controller.read()
-                updatedAt = Date()
+                try Task.checkCancellation()
+                guard generation == token else { return }
+                let result = try await controller.read()
+                guard generation == token, !Task.isCancelled else { return }
+                controls = result; updatedAt = Date(); controlsVerified = true
+                cache[id] = (result, updatedAt!)
+                retryCount = 0; retryAt = nil; message = nil
+                busy = false; refreshing = false
+                deadlineTask?.cancel(); deadlineTask = nil; operationTask = nil
             } catch {
-                controls = nil; updatedAt = nil
-                message = error.localizedDescription
-                controller.close(); self.controller = nil
+                guard generation == token, !Task.isCancelled else { return }
+                readFailed(error.localizedDescription)
             }
         }
+    }
+    private func readFailed(_ error: String) {
+        deadlineTask?.cancel(); deadlineTask = nil; operationTask = nil
+        busy = false; refreshing = false; controlsVerified = false
+        message = error
+        controller?.close(); controller = nil
+        retryCount += 1
+        retryAt = Date().addingTimeInterval(retryCount == 1 ? 2 : 5)
     }
     func setMode(_ mode: Int) { perform { try await $0.setMode(mode) } }
     func setLevel(_ level: Double) { perform { try await $0.setLevel(level) } }
     func setEQ(_ eq: [Double]) { perform { try await $0.setEQ(eq) } }
     func refreshDongleMode(clearErrors: Bool = true) async {
-        guard showsDongleControls, !readingDongleMode, !busy else { return }
+        guard showsDongleControls, !readingDongleMode, !working else { return }
         do {
             dongleFormats = try BTDAudioFormats.available()
             dongleFormatID = try BTDAudioFormats.current().id
             if clearErrors { dongleFormatError = nil }
         } catch { dongleFormats = []; dongleFormatID = ""; dongleFormatError = error.localizedDescription }
+        let token = generation
         readingDongleMode = true
-        defer { readingDongleMode = false }
+        defer { if generation == token { readingDongleMode = false } }
         do {
-            dongleMode = try await BTD700.mode().mode
+            let state = try await BTD700.mode().mode
+            guard generation == token else { return }
+            dongleMode = state
             if clearErrors { dongleModeError = nil }
-        } catch { dongleMode = nil; dongleModeError = error.localizedDescription }
+        } catch { guard generation == token else { return }; dongleMode = nil; dongleModeError = error.localizedDescription }
     }
     func setDongleFormat(_ id: String) {
-        guard !busy, !readingDongleMode, let format = dongleFormats.first(where: { $0.id == id }) else { return }
+        guard !working, !readingDongleMode, let format = dongleFormats.first(where: { $0.id == id }) else { return }
         busy = true
         dongleFormatError = nil
-        Task {
-            defer { busy = false }
-            do { dongleFormatID = try await BTDAudioFormats.select(format).id }
+        let token = generation
+        operationTask = Task {
+            guard generation == token, !Task.isCancelled else { return }
+            defer { if generation == token { busy = false } }
+            do { let result = try await BTDAudioFormats.select(format).id; guard generation == token else { return }; dongleFormatID = result }
             catch {
+                guard generation == token else { return }
                 dongleFormatID = (try? BTDAudioFormats.current().id) ?? ""
                 dongleFormatError = error.localizedDescription
             }
         }
     }
     func setDongleMode(_ mode: BTDMode) {
-        guard !busy, !readingDongleMode else { return }
+        guard !working, !readingDongleMode else { return }
         busy = true
         dongleModeError = nil
-        Task {
-            defer { busy = false }
-            do { dongleMode = try await BTD700.setMode(mode).mode }
-            catch { dongleMode = nil; dongleModeError = error.localizedDescription }
+        let token = generation
+        operationTask = Task {
+            guard generation == token, !Task.isCancelled else { return }
+            defer { if generation == token { busy = false } }
+            do { let result = try await BTD700.setMode(mode).mode; guard generation == token else { return }; dongleMode = result }
+            catch { guard generation == token else { return }; dongleMode = nil; dongleModeError = error.localizedDescription }
         }
     }
     func selectAudioOutput(_ output: AudioOutput) {
-        guard !busy else { return }
+        guard !working else { return }
         busy = true
         audioOutputError = nil
-        Task {
-            defer { busy = false; scan() }
+        outputErrorWaitingForHeadphoneID = nil
+        let token = generation
+        let selected = self.selected
+        operationTask = Task {
+            guard generation == token, !Task.isCancelled else { return }
+            defer { if generation == token { busy = false; scan() } }
             do {
                 if output.isBTD700 {
                     guard dongleOutputs.count == 1 else {
@@ -169,14 +264,16 @@ import CoreAudio
                     }
                     if selected.kind == .momentum4 {
                         guard selected.connected else {
+                            outputErrorWaitingForHeadphoneID = selected.id
                             throw ControlError.message("Connect MOMENTUM 4 directly to this Mac first so its control connection can be preserved.")
                         }
                         let momentum = controller as? MomentumController ?? MomentumController(address: selected.id)
                         try await momentum.connectDongle()
                     }
                 }
+                guard generation == token else { return }
                 try AudioOutputs.select(output.id)
-            } catch { audioOutputError = error.localizedDescription }
+            } catch { guard generation == token else { return }; audioOutputError = error.localizedDescription }
         }
     }
     func openBTDAdvanced() {
@@ -199,6 +296,7 @@ import CoreAudio
     }
 }
 
+#if !SESSION_TEST
 @main struct HeadphoneBarApp: App {
     @StateObject private var model = AppModel()
     var body: some Scene {
@@ -207,6 +305,8 @@ import CoreAudio
         }.menuBarExtraStyle(.window)
     }
 }
+
+#endif
 
 struct HeadphonePanel: View {
     @ObservedObject var model: AppModel
@@ -218,7 +318,7 @@ struct HeadphonePanel: View {
                 .background(selected ? Color.accentColor : Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
                 .foregroundStyle(selected ? Color.white : Color.primary)
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.12)))
-        }.buttonStyle(.plain).disabled(model.busy)
+        }.buttonStyle(.plain).disabled(model.working)
             .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
     var body: some View {
@@ -230,7 +330,7 @@ struct HeadphonePanel: View {
                     Text("Headphone controls").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if model.busy { ProgressView().controlSize(.small) }
+                if model.working { ProgressView().controlSize(.small) }
                 else { Button { model.scan(); model.refresh() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.borderless).help("Refresh headphone settings") }
             }
             Divider()
@@ -251,7 +351,7 @@ struct HeadphonePanel: View {
                 if let selected = model.selected {
                     HStack {
                         Circle().fill(selected.connected ? Color.green : Color.gray).frame(width: 6, height: 6)
-                        Text(selected.kind.rawValue + " · " + (selected.connected ? "Connected" : "Disconnected"))
+                        Text(selected.kind.rawValue + " · Mac " + (selected.connected ? "connected" : "disconnected"))
                         Spacer()
                         if let battery = model.controls?.battery {
                             Label("\(battery)%", systemImage: battery > 20 ? "battery.75percent" : "battery.25percent")
@@ -287,8 +387,9 @@ struct HeadphonePanel: View {
                 Label(error, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             }
             if let controls = model.controls {
-                ControlPanel(controls: controls, model: model).id(model.updatedAt).disabled(model.busy)
-            } else if model.busy {
+                Text(model.controlStatus).font(.caption).foregroundStyle(.secondary)
+                ControlPanel(controls: controls, model: model).id(model.selectedID).disabled(!model.canEditControls)
+            } else if model.working {
                 Text("Reading headphone settings…").font(.callout).foregroundStyle(.secondary)
             }
             Divider()
@@ -302,7 +403,7 @@ struct HeadphonePanel: View {
             }.font(.caption)
         }
         .padding(20).frame(width: 380).fixedSize(horizontal: false, vertical: true)
-        .onAppear { model.scan(); if model.selectedID != nil && !model.busy { model.refresh() } }
+        .onAppear { model.panelOpened() }
     }
 }
 
@@ -343,7 +444,7 @@ struct BTDAdvancedPanel: View {
                     .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }.padding(20).frame(width: 420).fixedSize(horizontal: false, vertical: true)
-            .task(id: model.busy) { await model.refreshDongleMode(clearErrors: false) }
+
     }
 }
 
@@ -417,8 +518,14 @@ struct ControlPanel: View {
             }
             if let note = controls.note { Text(note).font(.caption).foregroundStyle(.secondary) }
             if let date = model.updatedAt {
-                Text("Read from headphones at \(date.formatted(date: .omitted, time: .shortened))").font(.caption2).foregroundStyle(.tertiary)
+                Text("Last read at \(date.formatted(date: .omitted, time: .shortened))").font(.caption2).foregroundStyle(.tertiary)
             }
+        }
+        .onChange(of: controls.eq) { old, new in
+            if eq == old || eq.count != new.count { eq = new }
+        }
+        .onChange(of: controls.level) { old, new in
+            if level == old, let new { level = new }
         }
     }
 }
