@@ -1,6 +1,6 @@
 import Foundation
-func XCTAssertTrue(_ value: @autoclosure () -> Bool) { precondition(value()) }
-func XCTAssertFalse(_ value: @autoclosure () -> Bool) { precondition(!value()) }
+func XCTAssertTrue(_ value: @autoclosure () -> Bool, file: StaticString = #filePath, line: UInt = #line) { precondition(value(), file: file, line: line) }
+func XCTAssertFalse(_ value: @autoclosure () -> Bool, file: StaticString = #filePath, line: UInt = #line) { precondition(!value(), file: file, line: line) }
 func XCTAssertNil<T>(_ value: T?) { precondition(value == nil) }
 func XCTAssertEqual<T: Equatable>(_ left: T, _ right: T) { precondition(left == right, "\(left) != \(right)") }
 func XCTFail(_ message: String) { fatalError(message) }
@@ -40,9 +40,10 @@ func XCTFail(_ message: String) { fatalError(message) }
         print("Passed 9 app session/cache regression tests.")
     }
     @MainActor private func settle(_ condition: () -> Bool) async {
-        for _ in 0..<1000 {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while ContinuousClock.now < deadline {
             if condition() { return }
-            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(1))
         }
         XCTFail("Async operation did not settle")
     }
@@ -145,7 +146,7 @@ func XCTFail(_ message: String) { fatalError(message) }
         let fake = FakeController()
         let model = AppModel(startMonitoring: false, responseTimeout: .milliseconds(20), controllerFactory: { _ in fake })
         model.updateHeadphones([headphone()]); await settle { fake.reads == 1 }
-        try? await Task.sleep(for: .milliseconds(50))
+        await settle { !model.working }
         XCTAssertFalse(model.working); XCTAssertFalse(model.controlsVerified)
         XCTAssertTrue(model.message?.contains("timed out") == true)
         fake.finish(); await Task.yield()
