@@ -393,6 +393,7 @@ struct HeadphonePanel: View {
                 Text("Reading headphone settings…").font(.callout).foregroundStyle(.secondary)
             }
             Divider()
+            LaunchAtLoginMenu().font(.caption)
             HStack {
                 Button("Bluetooth settings…") { model.openSettings() }.buttonStyle(.borderless)
                 if model.showsDongleControls {

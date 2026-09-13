@@ -17,6 +17,11 @@ Download the `.pkg` installer from [Releases](https://github.com/michaeldeby/Hea
 It installs `HeadphoneBar.app` in `/Applications`. Alternatively, download the ZIP
 and move the app to Applications. Release assets include SHA-256 checksums.
 
+Open HeadphoneBar from Applications or Spotlight, then click its headphones icon
+in the menu bar. In the panel, choose **Functions → Launch at login** to start it
+automatically when you sign in. The same toggle turns this off. If macOS requires
+approval, use **Approve in Login Items…** in that menu.
+
 Preview builds are ad-hoc signed and **not notarized by Apple**. If macOS blocks
 launch, use **System Settings → Privacy & Security → Open Anyway** after verifying
 the download and deciding you trust this release. No security settings need to be
