@@ -7,19 +7,15 @@ struct LaunchAtLoginMenu: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        Menu {
+        VStack(alignment: .leading, spacing: 6) {
             Toggle("Launch at login", isOn: Binding(
                 get: { status == .enabled || status == .requiresApproval },
                 set: setEnabled
-            ))
+            )).toggleStyle(.switch).controlSize(.small)
             if status == .requiresApproval {
                 Button("Approve in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
             }
-        } label: {
-            Label("Functions", systemImage: "gearshape")
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
         .onAppear { status = SMAppService.mainApp.status }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             status = SMAppService.mainApp.status
