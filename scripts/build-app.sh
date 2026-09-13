@@ -39,6 +39,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
+<key>CFBundleURLTypes</key><array><dict>
+<key>CFBundleURLName</key><string>local.headphonebar.app</string>
+<key>CFBundleURLSchemes</key><array><string>headphonebar</string></array>
+</dict></array>
 <key>NSBluetoothAlwaysUsageDescription</key><string>HeadphoneBar connects to your paired headphones to read battery and adjust noise control and equalizer settings.</string>
 <key>NSBluetoothPeripheralUsageDescription</key><string>HeadphoneBar uses Bluetooth to adjust your headphones.</string>
 <key>NSHighResolutionCapable</key><true/>

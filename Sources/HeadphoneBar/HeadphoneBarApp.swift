@@ -298,10 +298,10 @@ import CoreAudio
 
 #if !SESSION_TEST
 @main struct HeadphoneBarApp: App {
-    @StateObject private var model = AppModel()
+    @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegate
     var body: some Scene {
         MenuBarExtra("HeadphoneBar", systemImage: "headphones") {
-            HeadphonePanel(model: model)
+            HeadphonePanel(model: delegate.model)
         }.menuBarExtraStyle(.window)
     }
 }

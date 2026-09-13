@@ -22,6 +22,11 @@ in the menu bar. In the panel, choose **Functions → Launch at login** to start
 automatically when you sign in. The same toggle turns this off. If macOS requires
 approval, use **Approve in Login Items…** in that menu.
 
+Opening HeadphoneBar from Raycast, Spotlight, or Finder brings up its controls
+window, even when it is already running in the menu bar. Login launches remain
+in the background. A [local Raycast extension](raycast/README.md) adds commands
+for opening controls, BTD 700 Advanced, and refreshing settings.
+
 Preview builds are ad-hoc signed and **not notarized by Apple**. If macOS blocks
 launch, use **System Settings → Privacy & Security → Open Anyway** after verifying
 the download and deciding you trust this release. No security settings need to be
