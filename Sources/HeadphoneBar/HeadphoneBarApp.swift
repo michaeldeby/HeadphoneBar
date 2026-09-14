@@ -68,6 +68,7 @@ import CoreAudio
         }
         super.init()
         guard startMonitoring else { return }
+        bluetoothStatus = "Waiting for Bluetooth permission or initialization…"
         if ProcessInfo.processInfo.arguments.contains("--diagnose-momentum") { bleDiagnostic = MomentumBLEDiagnostic() }
         bluetooth = CBCentralManager(delegate: self, queue: .main)
         timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
@@ -282,6 +283,9 @@ import CoreAudio
         while bluetooth?.state == .unknown || bluetooth?.state == .resetting {
             guard ContinuousClock.now < startupDeadline else { break }
             try await Task.sleep(for: .milliseconds(100))
+        }
+        if let bluetooth, bluetooth.state != .poweredOn {
+            throw ControlError.message(bluetoothStatus ?? "Bluetooth is not ready. Check HeadphoneBar and its Bluetooth permission.")
         }
         scan()
         guard bluetoothStatus == nil, let headphone = selected, headphone.connected else {
