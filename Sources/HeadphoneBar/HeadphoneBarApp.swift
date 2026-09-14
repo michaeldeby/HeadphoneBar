@@ -276,6 +276,65 @@ import CoreAudio
             } catch { guard generation == token else { return }; audioOutputError = error.localizedDescription }
         }
     }
+    func executeRemote(_ action: RemoteAction) async throws -> String {
+        // A cold launch may still be waiting for CoreBluetooth's initial state.
+        let startupDeadline = ContinuousClock.now + .seconds(5)
+        while bluetooth?.state == .unknown || bluetooth?.state == .resetting {
+            guard ContinuousClock.now < startupDeadline else { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        scan()
+        guard bluetoothStatus == nil, let headphone = selected, headphone.connected else {
+            throw ControlError.message(bluetoothStatus ?? "Select a connected headphone in HeadphoneBar first.")
+        }
+        let token = generation
+        func waitForOperation() async throws {
+            let deadline = ContinuousClock.now + .seconds(35)
+            while working {
+                guard generation == token, selectedID == headphone.id else {
+                    throw ControlError.message("The headphone connection changed. Try again.")
+                }
+                guard ContinuousClock.now < deadline else {
+                    throw ControlError.message("The headphone did not respond in time. Check HeadphoneBar before retrying.")
+                }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            guard generation == token, selectedID == headphone.id, selected?.connected == true else {
+                throw ControlError.message(message ?? "The headphone connection changed. Try again.")
+            }
+        }
+        try await waitForOperation()
+        if action == .bluetooth || action == .btd {
+            let output: AudioOutput
+            if action == .btd {
+                guard showsDongleControls, dongleOutputs.count == 1, let dongle = dongleOutputs.first else {
+                    throw ControlError.message("Connect one BTD 700 and select a supported Sennheiser headphone first.")
+                }
+                output = dongle
+            } else {
+                guard let directOutput else { throw ControlError.message("The selected headphone's Mac Bluetooth audio output is unavailable.") }
+                output = directOutput
+            }
+            // Uses the same peer-switch routine as the app, which preserves this Mac.
+            selectAudioOutput(output)
+            try await waitForOperation()
+            if let audioOutputError { throw ControlError.message(audioOutputError) }
+            guard AudioOutputs.currentID() == output.id else { throw ControlError.message("macOS did not confirm the requested output.") }
+            return "Audio output: \(output.name)"
+        }
+        if !controlsVerified { refresh(); try await waitForOperation() }
+        guard controlsVerified, let controls else { throw ControlError.message(message ?? "Headphone controls are unavailable.") }
+        let setting = try action.noiseSetting(kind: headphone.kind, controls: controls)
+        if let level = setting.level { setLevel(level) } else { setMode(setting.mode) }
+        try await waitForOperation()
+        guard controlsVerified, let actual = self.controls, actual.mode == setting.mode,
+              setting.level.map({ actual.level == $0 }) ?? true else {
+            throw ControlError.message(message ?? "The headphone did not confirm the requested noise setting.")
+        }
+        let title = action == .ancOn ? "ANC on" : action == .ancOff ? "ANC off" : "Transparency on"
+        return "\(headphone.name): \(title)"
+    }
+
     func openBTDAdvanced() {
         if advancedPanel == nil {
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 300), styleMask: [.titled, .closable, .utilityWindow], backing: .buffered, defer: false)

@@ -4,6 +4,7 @@ import Carbon
 
 @MainActor final class ApplicationDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
+    private let remoteInbox = RemoteCommandInbox()
     private var controlsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -12,7 +13,7 @@ import Carbon
         let event = NSAppleEventManager.shared().currentAppleEvent
         let login = event?.eventID == kAEOpenApplication &&
             event?.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
-        if !login { showControls() }
+        if !login && event?.eventID != AEEventID(kAEGetURL) { showControls() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -22,8 +23,12 @@ import Carbon
 
     @objc private func handleURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let raw = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue,
-              let url = URL(string: raw), url.scheme == "headphonebar", url.query == nil,
-              url.path.isEmpty || url.path == "/" else { return }
+              let url = URL(string: raw), url.scheme == "headphonebar", url.query == nil else { return }
+        if url.host == "command" {
+            remoteInbox.receive(id: String(url.path.dropFirst()), model: model)
+            return
+        }
+        guard url.path.isEmpty || url.path == "/" else { return }
         switch url.host {
         case "open": showControls()
         case "advanced": model.openBTDAdvanced()

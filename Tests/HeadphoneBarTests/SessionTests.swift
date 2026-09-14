@@ -9,6 +9,8 @@ func XCTFail(_ message: String) { fatalError(message) }
     var reads = 0
     var writes = 0
     var closed = false
+    var mode = 0
+    var level: Double = 50
     var pending: [CheckedContinuation<Controls, Error>] = []
     func read() async throws -> Controls {
         reads += 1
@@ -16,11 +18,13 @@ func XCTFail(_ message: String) { fatalError(message) }
     }
     func finish(_ battery: Int = 50) {
         var controls = Controls(); controls.battery = battery
+        controls.mode = mode; controls.level = level; controls.levelRange = 0...100
+        controls.modes = [.init(id: 0, name: "Off"), .init(id: 1, name: "Adaptive"), .init(id: 2, name: "Custom")]
         pending.removeFirst().resume(returning: controls)
     }
     func fail() { pending.removeFirst().resume(throwing: ControlError.message("Disconnected")) }
-    func setMode(_ mode: Int) async throws { writes += 1 }
-    func setLevel(_ level: Double) async throws { writes += 1 }
+    func setMode(_ mode: Int) async throws { writes += 1; self.mode = mode }
+    func setLevel(_ level: Double) async throws { writes += 1; self.level = level; mode = 2 }
     func setEQ(_ eq: [Double]) async throws { writes += 1 }
     func close() { closed = true }
 }
@@ -37,7 +41,11 @@ func XCTFail(_ message: String) { fatalError(message) }
         await tests.testSleepInvalidatesPendingRead()
         await tests.testDeadlineReleasesBusyStateAndRejectsLateResponse()
         await tests.testFailedRefreshRetainsCacheAndRecovers()
-        print("Passed 9 app session/cache regression tests.")
+        try! tests.testRemoteCapabilities()
+        await tests.testRemoteWaitsForConfirmation()
+        await tests.testRemoteRejectsMismatchedReadback()
+        await tests.testRemoteRejectsDisconnectedHeadphone()
+        print("Passed 13 app session/cache/command regression tests.")
     }
     @MainActor private func settle(_ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + .seconds(2)
@@ -164,6 +172,49 @@ func XCTFail(_ message: String) { fatalError(message) }
         model.refresh(); await settle { fake.reads == 3 }; fake.finish(75)
         await settle { model.controlsVerified }
         XCTAssertNil(model.message); XCTAssertEqual(model.controls?.battery, 75)
+    }
+
+    @MainActor func testRemoteCapabilities() throws {
+        var controls = Controls(); controls.mode = 0; controls.level = 50; controls.levelRange = 0...100
+        controls.modes = [.init(id: 0, name: "Off"), .init(id: 1, name: "Adaptive"), .init(id: 2, name: "Custom")]
+        XCTAssertEqual(try RemoteAction.ancOn.noiseSetting(kind: .momentum4, controls: controls).level, 0)
+        XCTAssertEqual(try RemoteAction.transparency.noiseSetting(kind: .momentum4, controls: controls).level, 100)
+        XCTAssertEqual(try RemoteAction.ancOff.noiseSetting(kind: .momentum4, controls: controls).mode, 0)
+        XCTAssertEqual(try RemoteAction.transparency.noiseSetting(kind: .sony, controls: controls).mode, 2)
+        controls.modes = [.init(id: 8, name: "Quiet"), .init(id: 9, name: "Aware")]
+        XCTAssertEqual(try RemoteAction.ancOn.noiseSetting(kind: .bose, controls: controls).mode, 8)
+        do { _ = try RemoteAction.ancOff.noiseSetting(kind: .bose, controls: controls); XCTFail("Bose off must be rejected when absent") } catch {}
+        controls.mode = nil
+        do { _ = try RemoteAction.ancOn.noiseSetting(kind: .sony, controls: controls); XCTFail("Cannot promise confirmation for legacy Sony") } catch {}
+    }
+    @MainActor func testRemoteWaitsForConfirmation() async {
+        let fake = FakeController()
+        let model = AppModel(startMonitoring: false, controllerFactory: { _ in fake })
+        model.updateHeadphones([headphone()]); await settle { fake.reads == 1 }; fake.finish()
+        await settle { model.controlsVerified }
+        let request = Task { try await model.executeRemote(.transparency) }
+        await settle { fake.reads == 2 }
+        XCTAssertEqual(fake.writes, 1); XCTAssertTrue(model.working)
+        fake.finish()
+        do { let result = try await request.value; XCTAssertTrue(result.contains("Transparency on")) }
+        catch { XCTFail(error.localizedDescription) }
+        XCTAssertEqual(model.controls?.level, 100)
+    }
+    @MainActor func testRemoteRejectsMismatchedReadback() async {
+        let fake = FakeController()
+        let model = AppModel(startMonitoring: false, controllerFactory: { _ in fake })
+        model.updateHeadphones([headphone()]); await settle { fake.reads == 1 }; fake.finish()
+        await settle { model.controlsVerified }
+        let request = Task { try await model.executeRemote(.ancOn) }
+        await settle { fake.reads == 2 }; fake.mode = 0; fake.finish()
+        do { _ = try await request.value; XCTFail("Incorrect readback must not report success") } catch {}
+    }
+    @MainActor func testRemoteRejectsDisconnectedHeadphone() async {
+        let fake = FakeController()
+        let model = AppModel(startMonitoring: false, controllerFactory: { _ in fake })
+        model.updateHeadphones([headphone(connected: false)])
+        do { _ = try await model.executeRemote(.ancOn); XCTFail("Disconnected command must fail") } catch {}
+        XCTAssertEqual(fake.writes, 0)
     }
 
 }

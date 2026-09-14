@@ -25,7 +25,7 @@ approval, use **Approve in Login Items…** beneath the switch.
 Opening HeadphoneBar from Raycast, Spotlight, or Finder brings up its controls
 window, even when it is already running in the menu bar. Login launches remain
 in the background. A [local Raycast extension](raycast/README.md) adds commands
-for opening controls, BTD 700 Advanced, and refreshing settings.
+for ANC on/off, transparency, Bluetooth/BTD 700 audio output, opening controls, BTD 700 Advanced, and refreshing settings. Direct commands report the result after HeadphoneBar verifies it.
 
 Preview builds are ad-hoc signed and **not notarized by Apple**. If macOS blocks
 launch, use **System Settings → Privacy & Security → Open Anyway** after verifying

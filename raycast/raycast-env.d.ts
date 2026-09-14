@@ -19,6 +19,16 @@ declare namespace Preferences {
   export type BtdAdvanced = ExtensionPreferences & {}
   /** Preferences accessible in the `refresh-headphones` command */
   export type RefreshHeadphones = ExtensionPreferences & {}
+  /** Preferences accessible in the `anc-on` command */
+  export type AncOn = ExtensionPreferences & {}
+  /** Preferences accessible in the `anc-off` command */
+  export type AncOff = ExtensionPreferences & {}
+  /** Preferences accessible in the `transparency` command */
+  export type Transparency = ExtensionPreferences & {}
+  /** Preferences accessible in the `output-bluetooth` command */
+  export type OutputBluetooth = ExtensionPreferences & {}
+  /** Preferences accessible in the `output-btd700` command */
+  export type OutputBtd700 = ExtensionPreferences & {}
 }
 
 declare namespace Arguments {
@@ -28,5 +38,15 @@ declare namespace Arguments {
   export type BtdAdvanced = {}
   /** Arguments passed to the `refresh-headphones` command */
   export type RefreshHeadphones = {}
+  /** Arguments passed to the `anc-on` command */
+  export type AncOn = {}
+  /** Arguments passed to the `anc-off` command */
+  export type AncOff = {}
+  /** Arguments passed to the `transparency` command */
+  export type Transparency = {}
+  /** Arguments passed to the `output-bluetooth` command */
+  export type OutputBluetooth = {}
+  /** Arguments passed to the `output-btd700` command */
+  export type OutputBtd700 = {}
 }
 
