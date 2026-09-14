@@ -354,7 +354,7 @@ struct HeadphonePanel: View {
                         Text(selected.kind.rawValue + " · Mac " + (selected.connected ? "connected" : "disconnected"))
                         Spacer()
                         if let battery = model.controls?.battery {
-                            Label("\(battery)%", systemImage: battery > 20 ? "battery.75percent" : "battery.25percent")
+                            BatteryIndicator(percentage: battery)
                         }
                     }.font(.caption).foregroundStyle(.secondary)
                 }
