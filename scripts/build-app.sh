@@ -26,6 +26,7 @@ else
 fi
 cp -R ThirdPartyNotices "$APP/Contents/Resources/"
 cp LICENSE "$APP/Contents/Resources/LICENSE"
+cp Assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -34,11 +35,16 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>HeadphoneBar</string>
 <key>CFBundleIdentifier</key><string>local.headphonebar.app</string>
 <key>CFBundleExecutable</key><string>HeadphoneBar</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
+<key>CFBundleURLTypes</key><array><dict>
+<key>CFBundleURLName</key><string>local.headphonebar.app</string>
+<key>CFBundleURLSchemes</key><array><string>headphonebar</string></array>
+</dict></array>
 <key>NSBluetoothAlwaysUsageDescription</key><string>HeadphoneBar connects to your paired headphones to read battery and adjust noise control and equalizer settings.</string>
 <key>NSBluetoothPeripheralUsageDescription</key><string>HeadphoneBar uses Bluetooth to adjust your headphones.</string>
 <key>NSHighResolutionCapable</key><true/>
