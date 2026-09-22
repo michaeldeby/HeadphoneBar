@@ -191,7 +191,7 @@ import CoreAudio
                 try await operation(controller)
                 try Task.checkCancellation()
                 guard generation == token else { return }
-                let result = try await controller.read()
+                let result = try await (writing ? controller.readAfterWrite() : controller.read())
                 guard generation == token, !Task.isCancelled else { return }
                 controls = result; updatedAt = Date(); controlsVerified = true
                 cache[id] = (result, updatedAt!)

@@ -7,6 +7,7 @@ func XCTAssertEqual<T: Equatable>(_ left: T, _ right: T) { precondition(left == 
 func XCTFail(_ message: String) { fatalError(message) }
 
 @MainActor final class FakeController: HeadphoneController {
+    var confirmedWriteResult: Controls?
     var reads = 0
     var writes = 0
     var closed = false
@@ -16,6 +17,10 @@ func XCTFail(_ message: String) { fatalError(message) }
     func read() async throws -> Controls {
         reads += 1
         return try await withCheckedThrowingContinuation { pending.append($0) }
+    }
+    func readAfterWrite() async throws -> Controls {
+        if let confirmedWriteResult { return confirmedWriteResult }
+        return try await read()
     }
     func finish(_ battery: Int = 50) {
         var controls = Controls(); controls.battery = battery
@@ -47,7 +52,26 @@ func XCTFail(_ message: String) { fatalError(message) }
         await tests.testRemoteRejectsMismatchedReadback()
         await tests.testRemoteRejectsDisconnectedHeadphone()
         tests.testAudioDiscoveryAndIconState()
-        print("Passed 14 app session/cache/command regression tests.")
+        await tests.testConfirmedWriteAvoidsRedundantRead()
+        print("Passed 15 app session/cache/command regression tests.")
+    }
+    @MainActor func testConfirmedWriteAvoidsRedundantRead() async {
+        let fake = FakeController()
+        let model = AppModel(startMonitoring: false, controllerFactory: { _ in fake })
+        model.updateHeadphones([headphone()])
+        await settle { fake.reads == 1 }; fake.finish()
+        await settle { model.controlsVerified }
+        var confirmed = Controls(); confirmed.mode = 1; confirmed.battery = 50
+        fake.confirmedWriteResult = confirmed
+        model.setMode(1)
+        await settle { !model.busy }
+        XCTAssertEqual(model.controls?.mode, 1)
+        XCTAssertEqual(fake.reads, 1)
+        XCTAssertTrue(model.controlsVerified)
+        // Explicit refresh still fetches fresh hardware state.
+        model.refresh()
+        await settle { fake.reads == 2 }; fake.finish()
+        await settle { !model.refreshing }
     }
     @MainActor private func settle(_ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + .seconds(2)
