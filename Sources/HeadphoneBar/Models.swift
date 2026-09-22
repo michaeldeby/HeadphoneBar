@@ -31,8 +31,13 @@ struct Controls {
 }
 @MainActor protocol HeadphoneController: AnyObject {
     func read() async throws -> Controls
+    func readAfterWrite() async throws -> Controls
     func setMode(_ mode: Int) async throws
     func setLevel(_ level: Double) async throws
     func setEQ(_ values: [Double]) async throws
     func close()
+}
+
+extension HeadphoneController {
+    func readAfterWrite() async throws -> Controls { try await read() }
 }

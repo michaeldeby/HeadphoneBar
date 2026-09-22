@@ -17,6 +17,16 @@ Download the `.pkg` installer from [Releases](https://github.com/michaeldeby/Hea
 It installs `HeadphoneBar.app` in `/Applications`. Alternatively, download the ZIP
 and move the app to Applications. Release assets include SHA-256 checksums.
 
+Open HeadphoneBar from Applications or Spotlight, then click its headphones icon
+in the menu bar. In the panel, enable the **Launch at login** switch to start it
+automatically when you sign in. The same toggle turns this off. If macOS requires
+approval, use **Approve in Login Items…** beneath the switch.
+
+Opening HeadphoneBar from Raycast, Spotlight, or Finder brings up its controls
+window, even when it is already running in the menu bar. Login launches remain
+in the background. A [local Raycast extension](raycast/README.md) adds commands
+for ANC on/off, transparency, Bluetooth/BTD 700 audio output, opening controls, BTD 700 Advanced, and refreshing settings. Direct commands report the result after HeadphoneBar verifies it.
+
 Preview builds are ad-hoc signed and **not notarized by Apple**. If macOS blocks
 launch, use **System Settings → Privacy & Security → Open Anyway** after verifying
 the download and deciding you trust this release. No security settings need to be
@@ -58,7 +68,7 @@ MOMENTUM 4 battery, noise controls and EQ readback have been exercised on hardwa
 
 Names are used to select an adapter; Sony additionally verifies its advertised protocol service before issuing commands. Renamed devices with no recognizable model name appear as unsupported audio devices. The application does not identify every model using manufacturer IDs yet.
 
-Paired-device discovery runs every five seconds. Settings are read when opening the panel, selecting a device, refreshing, or completing a change. Errors clear the controls to avoid displaying stale values. Competing phone/desktop control apps can hold the control connection; close those apps if requests time out.
+Paired-device discovery runs every five seconds. The panel immediately displays settings cached in memory for the selected device. Opening it refreshes only after 30 seconds; explicit refresh and completed changes read immediately. Reconnection triggers a fresh read, with at most three automatic attempts per connection cycle. Cached values remain visible but disabled when the control connection is unavailable. Sleep and Bluetooth resets invalidate in-flight requests; old responses cannot replace the new session’s state. Competing phone/desktop control apps can hold the control connection; close those apps if requests time out.
 
 ## Verification
 
@@ -67,6 +77,8 @@ CLANG_MODULE_CACHE_PATH="$PWD/.build/module-cache" \
 SWIFTPM_MODULECACHE_OVERRIDE="$PWD/.build/module-cache" \
 swift run --disable-sandbox --cache-path "$PWD/.build/cache" HeadphoneProtocolTests
 ```
+
+Run `./scripts/test-sessions.sh` for app reconnection, cache expiry, stale-response, retry, sleep and timeout regression tests (no headphones required).
 
 Tests cover known wire bytes, escaping, fragmented/coalesced Sony frames, Bose segmentation, malformed lengths/checksums, and conservative model detection.
 

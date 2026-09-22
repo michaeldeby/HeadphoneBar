@@ -5,6 +5,7 @@ import OSLog
 
 @MainActor final class MomentumController: HeadphoneController {
     private let client: MomentumHeadsetClient
+    private var battery: Int?
     private let customLevelKey: String
     private var last: MomentumControlsSnapshot? {
         didSet {
@@ -24,8 +25,17 @@ import OSLog
     }
     func read() async throws -> Controls {
         let state = try await client.controlsSnapshot(); last = state
+        if let snapshot = try? await client.snapshot() { battery = snapshot.batteryPercentage.map(Int.init) }
+        return controls(from: state)
+    }
+    func readAfterWrite() async throws -> Controls {
+        // Setters return a fresh hardware readback. Do not reconnect and read it twice.
+        guard let last else { return try await read() }
+        return controls(from: last)
+    }
+    private func controls(from state: MomentumControlsSnapshot) -> Controls {
         var controls = Controls()
-        if let snapshot = try? await client.snapshot() { controls.battery = snapshot.batteryPercentage.map(Int.init) }
+        controls.battery = battery
         controls.modes = [.init(id: 0, name: "Off"), .init(id: 1, name: "Adaptive"), .init(id: 2, name: "Custom")]
         controls.mode = !state.ancEnabled ? 0 : state.ancModes.adaptiveEnabled ? 1 : 2
         controls.level = Double(state.transparencyLevel); controls.levelRange = 0...100
@@ -67,6 +77,10 @@ import OSLog
             throw ControlError.message(dongles.isEmpty
                 ? "Pair the BTD 700 with your headphones first. Keep this Mac connected for ANC and EQ."
                 : "Multiple paired BTD 700 dongles were found. Cannot choose one safely.")
+        }
+        if dongle.isConnected,
+           snapshot.devices.contains(where: { $0.index == snapshot.ownIndex && $0.isConnected }) {
+            return
         }
         let result = try await client.switchPeer(to: dongle.index, expectedName: dongle.name)
         guard result.devices.contains(where: { $0.index == result.ownIndex && $0.isConnected }),

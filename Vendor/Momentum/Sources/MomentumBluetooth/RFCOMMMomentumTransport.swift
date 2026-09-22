@@ -110,9 +110,8 @@ final class RFCOMMMomentumTransport: NSObject, @preconcurrency IOBluetoothRFCOMM
             throw MomentumBluetoothError.headsetNotPaired
         }
         self.device = device
-        let uuid = Self.serviceUUID()
-        let diagnose = ProcessInfo.processInfo.arguments.contains("--diagnose-momentum")
-        Self.logger.notice("Starting MOMENTUM connection; fresh discovery requested: \(diagnose)")
+        // Re-pairing can invalidate cached GAIA service records.
+        Self.logger.notice("Starting MOMENTUM connection with fresh service discovery")
 
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -126,16 +125,11 @@ final class RFCOMMMomentumTransport: NSObject, @preconcurrency IOBluetoothRFCOMM
                     self?.finishConnection(.failure(MomentumBluetoothError.connectionTimedOut))
                 }
 
-                if !diagnose, let record = device.getServiceRecord(for: uuid) {
-                    Self.logger.notice("Using cached GAIA service record")
-                    openChannel(device: device, record: record)
-                } else {
-                    connectionStage = "service discovery"
-                    let status = device.performSDPQuery(self)
-                    Self.logger.notice("Service discovery started; status: \(status)")
-                    if status != kIOReturnSuccess {
-                        finishConnection(.failure(MomentumBluetoothError.rfcommFailure(status)))
-                    }
+                connectionStage = "service discovery"
+                let status = device.performSDPQuery(self)
+                Self.logger.notice("Service discovery started; status: \(status)")
+                if status != kIOReturnSuccess {
+                    finishConnection(.failure(MomentumBluetoothError.rfcommFailure(status)))
                 }
             }
         } onCancel: {

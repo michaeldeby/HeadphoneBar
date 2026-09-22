@@ -1,0 +1,86 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "headphonebar",
+  "title": "HeadphoneBar",
+  "description": "Control headphone noise cancellation, transparency and Bluetooth or BTD 700 audio output.",
+  "icon": "icon.png",
+  "author": "michaeldeby",
+  "license": "MIT",
+  "platforms": [
+    "macOS"
+  ],
+  "categories": [
+    "Productivity",
+    "Music"
+  ],
+  "commands": [
+    {
+      "name": "open-headphonebar",
+      "title": "Open HeadphoneBar",
+      "description": "Show headphone controls, including ANC and EQ",
+      "mode": "no-view"
+    },
+    {
+      "name": "btd-advanced",
+      "title": "BTD 700 Advanced",
+      "subtitle": "HeadphoneBar",
+      "description": "Open BTD 700 sound mode and audio format settings",
+      "mode": "no-view"
+    },
+    {
+      "name": "refresh-headphones",
+      "title": "Refresh Headphones",
+      "subtitle": "HeadphoneBar",
+      "description": "Open HeadphoneBar and request fresh headphone settings",
+      "mode": "no-view"
+    },
+    {
+      "name": "anc-on",
+      "title": "ANC On",
+      "subtitle": "HeadphoneBar",
+      "description": "Enable noise cancelling and confirm the headphone setting",
+      "mode": "no-view"
+    },
+    {
+      "name": "anc-off",
+      "title": "ANC Off",
+      "subtitle": "HeadphoneBar",
+      "description": "Disable noise cancelling when supported",
+      "mode": "no-view"
+    },
+    {
+      "name": "transparency",
+      "title": "Transparency On",
+      "subtitle": "HeadphoneBar",
+      "description": "Enable ambient sound or Aware mode",
+      "mode": "no-view"
+    },
+    {
+      "name": "output-bluetooth",
+      "title": "Use Bluetooth Audio",
+      "subtitle": "HeadphoneBar",
+      "description": "Switch audio to the selected headphone\u2019s direct Mac Bluetooth connection",
+      "mode": "no-view"
+    },
+    {
+      "name": "output-btd700",
+      "title": "Use BTD 700 Audio",
+      "subtitle": "HeadphoneBar",
+      "description": "Switch audio to BTD 700 while keeping the Mac control connection",
+      "mode": "no-view"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "2.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.9.0"
+  },
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "typecheck": "tsc --noEmit"
+  }
+}

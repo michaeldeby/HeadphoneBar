@@ -6,12 +6,25 @@ on:
 permissions:
   contents: read
 jobs:
+  raycast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: raycast/package-lock.json
+      - run: npm ci && npm run typecheck && npm run build
+        working-directory: raycast
   build:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Protocol tests
         run: swift run -c release HeadphoneProtocolTests
+      - name: Session and cache regression tests
+        run: ./scripts/test-sessions.sh
       - name: Universal app and installer
         run: ./scripts/package-macos.sh
       - name: Validate generated Homebrew cask
