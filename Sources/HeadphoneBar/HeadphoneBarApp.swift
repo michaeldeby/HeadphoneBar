@@ -55,6 +55,7 @@ import CoreAudio
     private var bleDiagnostic: MomentumBLEDiagnostic?
     private var timer: Timer?
     private var bluetooth: CBCentralManager!
+    var hasConnectedHeadphones: Bool { bluetoothStatus == nil && headphones.contains(where: \.connected) }
     var selected: Headphone? { headphones.first { $0.id == selectedID } }
     init(startMonitoring: Bool = true, responseTimeout: Duration = .seconds(30), controllerFactory: ((Headphone) -> HeadphoneController?)? = nil) {
         self.responseTimeout = responseTimeout
@@ -109,12 +110,26 @@ import CoreAudio
         }
         guard bluetooth?.state == .poweredOn else { return }
         let paired = IOBluetoothDevice.pairedDevices() as? [IOBluetoothDevice] ?? []
-        updateHeadphones(paired.compactMap { device in
+        let discovered = paired.compactMap { device -> Headphone? in
             guard let id = device.addressString, let name = device.name else { return nil }
             let kind = HeadphoneKind.detect(name)
             guard kind != .unknown || device.deviceClassMajor == 4 else { return nil }
             return Headphone(id: id, name: name, kind: kind, connected: device.isConnected())
-        })
+        }
+        updateHeadphones(Self.reconcileHeadphones(discovered, outputs: audioOutputs))
+    }
+    static func reconcileHeadphones(_ paired: [Headphone], outputs: [AudioOutput]) -> [Headphone] {
+        var result = paired
+        for output in outputs {
+            guard let address = output.bluetoothAddress else { continue }
+            if let index = result.firstIndex(where: { $0.id.replacingOccurrences(of: ":", with: "-").uppercased() == address }) {
+                let known = result[index]
+                result[index] = Headphone(id: known.id, name: known.name, kind: known.kind, connected: true)
+            } else {
+                result.append(Headphone(id: address, name: output.name, kind: HeadphoneKind.detect(output.name), connected: true))
+            }
+        }
+        return result
     }
     func updateHeadphones(_ devices: [Headphone], now: Date = Date()) {
         let wasConnected = selected?.connected == true
@@ -363,13 +378,25 @@ import CoreAudio
 @main struct HeadphoneBarApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegate
     var body: some Scene {
-        MenuBarExtra("HeadphoneBar", systemImage: "headphones") {
+        MenuBarExtra {
             HeadphonePanel(model: delegate.model)
+        } label: {
+            HeadphoneMenuIcon(model: delegate.model)
         }.menuBarExtraStyle(.window)
     }
 }
 
 #endif
+
+struct HeadphoneMenuIcon: View {
+    @ObservedObject var model: AppModel
+    var body: some View {
+        Image(systemName: "headphones")
+            .renderingMode(.original)
+            .foregroundStyle(model.hasConnectedHeadphones ? Color.primary : Color.gray)
+            .accessibilityLabel(model.hasConnectedHeadphones ? "HeadphoneBar — headphones connected" : "HeadphoneBar — no headphones connected")
+    }
+}
 
 struct HeadphonePanel: View {
     @ObservedObject var model: AppModel

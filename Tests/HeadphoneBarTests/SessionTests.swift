@@ -1,4 +1,5 @@
 import Foundation
+import CoreAudio
 func XCTAssertTrue(_ value: @autoclosure () -> Bool, file: StaticString = #filePath, line: UInt = #line) { precondition(value(), file: file, line: line) }
 func XCTAssertFalse(_ value: @autoclosure () -> Bool, file: StaticString = #filePath, line: UInt = #line) { precondition(!value(), file: file, line: line) }
 func XCTAssertNil<T>(_ value: T?) { precondition(value == nil) }
@@ -45,7 +46,8 @@ func XCTFail(_ message: String) { fatalError(message) }
         await tests.testRemoteWaitsForConfirmation()
         await tests.testRemoteRejectsMismatchedReadback()
         await tests.testRemoteRejectsDisconnectedHeadphone()
-        print("Passed 13 app session/cache/command regression tests.")
+        tests.testAudioDiscoveryAndIconState()
+        print("Passed 14 app session/cache/command regression tests.")
     }
     @MainActor private func settle(_ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + .seconds(2)
@@ -215,6 +217,27 @@ func XCTFail(_ message: String) { fatalError(message) }
         model.updateHeadphones([headphone(connected: false)])
         do { _ = try await model.executeRemote(.ancOn); XCTFail("Disconnected command must fail") } catch {}
         XCTAssertEqual(fake.writes, 0)
+    }
+
+    @MainActor func testAudioDiscoveryAndIconState() {
+        let address = "80-C3-BA-81-E7-90"
+        XCTAssertEqual(AudioOutputs.bluetoothAddress(uid: address + ":output", transport: kAudioDeviceTransportTypeBluetooth, alive: true), address)
+        XCTAssertNil(AudioOutputs.bluetoothAddress(uid: address + ":output", transport: kAudioDeviceTransportTypeUSB, alive: true))
+        XCTAssertNil(AudioOutputs.bluetoothAddress(uid: address + ":output", transport: kAudioDeviceTransportTypeBluetooth, alive: false))
+        XCTAssertNil(AudioOutputs.bluetoothAddress(uid: "invalid:output", transport: kAudioDeviceTransportTypeBluetooth, alive: true))
+        let output = AudioOutput(id: 1, name: "MOMENTUM 4", transport: kAudioDeviceTransportTypeBluetooth, bluetoothAddress: address)
+        let found = AppModel.reconcileHeadphones([], outputs: [output])
+        XCTAssertEqual(found.count, 1); XCTAssertTrue(found[0].connected)
+        let paired = Headphone(id: address.lowercased(), name: "MOMENTUM 4", kind: .momentum4, connected: false)
+        let merged = AppModel.reconcileHeadphones([paired], outputs: [output])
+        XCTAssertEqual(merged.count, 1); XCTAssertEqual(merged[0].id, paired.id); XCTAssertTrue(merged[0].connected)
+        let model = AppModel(startMonitoring: false, controllerFactory: { _ in nil })
+        XCTAssertFalse(model.hasConnectedHeadphones)
+        model.updateHeadphones(found); XCTAssertTrue(model.hasConnectedHeadphones)
+        model.bluetoothStatus = "Bluetooth off"; XCTAssertFalse(model.hasConnectedHeadphones)
+        model.bluetoothStatus = nil
+        model.updateHeadphones(AppModel.reconcileHeadphones([paired], outputs: []))
+        XCTAssertFalse(model.hasConnectedHeadphones)
     }
 
 }

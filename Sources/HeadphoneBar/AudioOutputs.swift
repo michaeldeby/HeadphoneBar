@@ -5,6 +5,7 @@ struct AudioOutput: Identifiable {
     let id: AudioDeviceID
     let name: String
     let transport: UInt32
+    var bluetoothAddress: String? = nil
     var isBTD700: Bool { name.uppercased().contains("BTD 700") }
 }
 
@@ -31,9 +32,28 @@ enum AudioOutputs {
             var transport: UInt32 = 0
             var transportSize = UInt32(MemoryLayout<UInt32>.size)
             _ = AudioObjectGetPropertyData(device, &transportProperty, 0, nil, &transportSize, &transport)
-            return AudioOutput(id: device, name: name as String, transport: transport)
+            var uidProperty = address(kAudioDevicePropertyDeviceUID)
+            var uidReference: Unmanaged<CFString>?
+            var uidSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            let uidStatus = AudioObjectGetPropertyData(device, &uidProperty, 0, nil, &uidSize, &uidReference)
+            let uid = uidStatus == noErr ? uidReference?.takeRetainedValue() as String? : nil
+            var aliveProperty = address(kAudioDevicePropertyDeviceIsAlive)
+            var alive: UInt32 = 0
+            var aliveSize = UInt32(MemoryLayout<UInt32>.size)
+            _ = AudioObjectGetPropertyData(device, &aliveProperty, 0, nil, &aliveSize, &alive)
+            return AudioOutput(id: device, name: name as String, transport: transport,
+                bluetoothAddress: bluetoothAddress(uid: uid ?? "", transport: transport, alive: alive != 0))
         }
     }
+    static func bluetoothAddress(uid: String, transport: UInt32, alive: Bool) -> String? {
+        guard alive, transport == kAudioDeviceTransportTypeBluetooth else { return nil }
+        let parts = uid.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 2, parts[1] == "output" else { return nil }
+        let bytes = parts[0].split(separator: "-", omittingEmptySubsequences: false)
+        guard bytes.count == 6, bytes.allSatisfy({ $0.count == 2 && $0.allSatisfy(\.isHexDigit) }) else { return nil }
+        return bytes.joined(separator: "-").uppercased()
+    }
+
     static func currentID() -> AudioDeviceID? {
         var property = address(kAudioHardwarePropertyDefaultOutputDevice)
         var device: AudioDeviceID = 0
